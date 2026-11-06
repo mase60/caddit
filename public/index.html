@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caddy UI</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a5;
+    --accent:#4f8cff; --ok:#3ecf8e; --warn:#f5a524; --bad:#ff5d5d;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f4f5f8; --panel:#fff; --panel2:#f0f2f6; --line:#dfe3ea; --text:#1a1d24; --muted:#6a7385; color-scheme: light; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line); }
+  .bar { max-width:1200px; margin:0 auto; padding:14px 20px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  h1 { font-size:17px; margin:0; font-weight:650; display:flex; align-items:center; gap:8px; }
+  h1 small { color:var(--muted); font-weight:400; font-size:12px; }
+  .spacer { flex:1; }
+  input,textarea,select { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:inherit; width:100%; }
+  input:focus,textarea:focus,select:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  textarea { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; resize:vertical; min-height:140px; tab-size:4; }
+  .search { max-width:260px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.danger:hover { border-color:var(--bad); color:var(--bad); }
+  button.sm { padding:4px 10px; font-size:12.5px; }
+  .tabs { display:flex; gap:4px; }
+  .tabs button { border:0; background:none; color:var(--muted); border-radius:6px; }
+  .tabs button.on { background:var(--panel2); color:var(--text); }
+  main { max-width:1200px; margin:0 auto; padding:20px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:26px 0 10px; font-weight:600; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+  .card:hover { border-color:#3a4150; }
+  .card .top { display:flex; gap:8px; align-items:flex-start; }
+  .addr { font-weight:600; font-size:15px; word-break:break-all; flex:1; }
+  .addr a { color:inherit; text-decoration:none; }
+  .addr a:hover { color:var(--accent); }
+  .addr .more { display:block; font-weight:400; font-size:12.5px; color:var(--muted); }
+  .note { color:var(--muted); font-size:12.5px; white-space:pre-wrap; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font-size:12px; padding:2px 8px; border-radius:99px; background:var(--panel2); border:1px solid var(--line); color:var(--muted); font-family:ui-monospace,Consolas,monospace; }
+  .chip.proxy { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,var(--line)); }
+  .chip.ok { color:var(--ok); }
+  .chip.warn { color:var(--warn); }
+  .actions { display:flex; gap:6px; margin-top:auto; }
+  .empty { color:var(--muted); padding:40px; text-align:center; border:1px dashed var(--line); border-radius:12px; }
+  dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:14px; padding:0; width:min(640px,94vw); }
+  dialog::backdrop { background:rgba(0,0,0,.6); }
+  .dlg { padding:20px; display:flex; flex-direction:column; gap:12px; }
+  .dlg h3 { margin:0; font-size:16px; }
+  label { font-size:12.5px; color:var(--muted); display:block; margin-bottom:4px; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  .foot { display:flex; gap:8px; justify-content:flex-end; margin-top:4px; }
+  #toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); max-width:min(720px,92vw); padding:12px 16px; border-radius:10px; background:var(--panel); border:1px solid var(--line); box-shadow:0 8px 30px rgba(0,0,0,.4); display:none; white-space:pre-wrap; font-size:13px; z-index:20; }
+  #toast.ok { border-color:var(--ok); } #toast.warn { border-color:var(--warn); } #toast.err { border-color:var(--bad); }
+  #raw { min-height:70vh; width:100%; }
+  .hint { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <h1>Caddy UI <small id="file"></small></h1>
+  <div class="tabs"><button id="tabCards" class="on">Einträge</button><button id="tabRaw">Rohtext</button></div>
+  <div class="spacer"></div>
+  <input class="search" id="q" type="search" placeholder="Suchen …">
+  <button class="primary" id="add">+ Neuer Eintrag</button>
+</div></header>
+
+<main>
+  <div id="cards"></div>
+  <div id="rawView" hidden>
+    <textarea id="raw" spellcheck="false"></textarea>
+    <div class="foot"><span class="hint" style="margin-right:auto">Ganze Datei bearbeiten – wird vor dem Speichern validiert.</span><button class="primary" id="saveRaw">Speichern &amp; Neu laden</button></div>
+  </div>
+</main>
+
+<dialog id="dlg"><form method="dialog" class="dlg" id="form">
+  <h3 id="dlgTitle"></h3>
+  <div id="presetRow">
+    <label for="preset">Vorlage</label>
+    <select id="preset">
+      <option value="proxy">Reverse Proxy</option>
+      <option value="static">Statische Dateien</option>
+      <option value="redir">Weiterleitung</option>
+      <option value="custom">Leer / eigener Inhalt</option>
+    </select>
+  </div>
+  <div id="addrRow"><label for="header">Adresse(n) – mehrere mit Komma oder Leerzeichen</label><input id="header" placeholder="app.example.com" autocomplete="off"></div>
+  <div id="targetRow"><label for="target" id="targetLabel">Ziel</label><input id="target" placeholder="192.168.1.20:8080" autocomplete="off"></div>
+  <div><label for="body">Inhalt (Direktiven)</label><textarea id="body" spellcheck="false"></textarea></div>
+  <div><label for="comment">Kommentar (optional)</label><input id="comment" placeholder="z. B. Nextcloud"></div>
+  <div class="foot"><button value="cancel" type="button" id="cancel">Abbrechen</button><button class="primary" id="ok" type="submit">Speichern</button></div>
+</form></dialog>
+
+<dialog id="del"><form method="dialog" class="dlg">
+  <h3>Eintrag löschen?</h3><div id="delText"></div>
+  <div class="hint">Vorher wird automatisch ein Backup der Caddyfile angelegt.</div>
+  <div class="foot"><button type="button" id="delNo">Abbrechen</button><button class="primary danger" id="delYes" style="background:var(--bad);border-color:var(--bad)">Löschen</button></div>
+</form></dialog>
+
+<div id="toast"></div>
+
+<script>
+let S = { entries: [], hash: '' };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+function toast(msg, type = 'ok', ms = 4500) {
+  const t = $('toast'); t.textContent = msg; t.className = type; t.style.display = 'block';
+  clearTimeout(toast.t); if (ms) toast.t = setTimeout(() => (t.style.display = 'none'), ms);
+}
+async function api(method, url, data) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: data ? JSON.stringify(data) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function setState(st) { S = st; $('file').textContent = st.file; $('raw').value = st.raw; render(); }
+async function load() { try { setState(await api('GET', '/api/state')); } catch (e) { toast(e.message, 'err', 0); } }
+
+// Top-level-Direktiven aus dem Body lesen
+function directives(body) {
+  const out = []; let depth = 0;
+  for (const line of (body || '').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    if (depth === 0) out.push(t.replace(/\s*\{$/, ''));
+    if (/(^|\s)\{$/.test(t)) depth++; else if (t === '}') depth = Math.max(0, depth - 1);
+  }
+  return out;
+}
+function chips(e) {
+  const out = [];
+  for (const d of directives(e.body)) {
+    const [name, ...args] = d.split(/\s+/);
+    if (name === 'reverse_proxy') out.push(`<span class="chip proxy">→ ${esc(args.filter(a=>!a.startsWith('@')&&a!=='/*').join(' ') || '(Block)')}</span>`);
+    else if (name === 'file_server') out.push(`<span class="chip proxy">Dateien</span>`);
+    else if (name === 'root') out.push(`<span class="chip">root ${esc(args.slice(-1)[0])}</span>`);
+    else if (name === 'redir') out.push(`<span class="chip warn">redir ${esc(args.join(' '))}</span>`);
+    else if (name === 'respond') out.push(`<span class="chip">respond ${esc(args.join(' '))}</span>`);
+    else if (name === 'tls') out.push(`<span class="chip ok">tls ${esc(args.join(' '))}</span>`);
+    else if (name === 'import') out.push(`<span class="chip">import ${esc(args.join(' '))}</span>`);
+    else if (name.startsWith('@')) continue;
+    else out.push(`<span class="chip">${esc(name)}</span>`);
+  }
+  return out.length ? out.join('') : '<span class="chip">leer</span>';
+}
+function siteLinks(h) {
+  return h.split(/[\s,]+/).filter(Boolean).map((a) => {
+    const clean = a.replace(/^https?:\/\//, '');
+    const link = /^[\w.*-]+(:\d+)?(\/.*)?$/.test(clean) && !clean.startsWith('*') ? (a.startsWith('http://') ? a : (/:80$/.test(clean) ? 'http://' : 'https://') + clean) : null;
+    return link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(a)}</a>` : esc(a);
+  });
+}
+function card(e, i) {
+  let title, more = '';
+  if (e.kind === 'site') { const l = siteLinks(e.header); title = l[0] || esc(e.header); if (l.length > 1) more = `<span class="more">+ ${l.slice(1).join(', ')}</span>`; }
+  else if (e.kind === 'global') title = 'Globale Optionen';
+  else if (e.kind === 'snippet') title = esc(e.header);
+  else title = esc(e.header);
+  return `<div class="card" data-i="${i}">
+    <div class="top"><div class="addr">${title}${more}</div></div>
+    ${e.comment ? `<div class="note">${esc(e.comment.replace(/^#\s?/gm, ''))}</div>` : ''}
+    <div class="chips">${chips(e)}</div>
+    <div class="actions"><button class="sm" data-act="edit">Bearbeiten</button><button class="sm danger" data-act="del">Löschen</button></div>
+  </div>`;
+}
+function render() {
+  const q = $('q').value.trim().toLowerCase();
+  const items = S.entries.map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== 'comment' && (!q || JSON.stringify(e).toLowerCase().includes(q)));
+  const sites = items.filter(({ e }) => e.kind === 'site');
+  const other = items.filter(({ e }) => e.kind !== 'site');
+  let h = `<h2>Sites (${sites.length})</h2>`;
+  h += sites.length ? `<div class="grid">${sites.map(({ e, i }) => card(e, i)).join('')}</div>` : `<div class="empty">${q ? 'Nichts gefunden.' : 'Noch keine Einträge. Lege oben den ersten an.'}</div>`;
+  if (other.length) h += `<h2>Global &amp; Snippets</h2><div class="grid">${other.map(({ e, i }) => card(e, i)).join('')}</div>`;
+  $('cards').innerHTML = h;
+}
+
+async function commit(entries, okMsg) {
+  try {
+    const r = await api('PUT', '/api/entries', { entries, hash: S.hash });
+    setState(r.state);
+    if (r.reloaded) toast(okMsg + ' – Caddy neu geladen ✓', 'ok');
+    else toast(okMsg + '\n' + (r.note || ''), 'warn', 9000);
+    return true;
+  } catch (e) { toast(e.message, 'err', 0); return false; }
+}
+
+// ----- Dialog -----
+let editing = null; // Index oder -1 für neu
+const PRESETS = {
+  proxy: { label: 'Ziel (IP:Port oder URL)', ph: '192.168.1.20:8080', body: (t) => `reverse_proxy ${t || 'IP:PORT'}` },
+  static: { label: 'Ordner (root)', ph: '/srv/www', body: (t) => `root * ${t || '/srv/www'}\nfile_server` },
+  redir: { label: 'Weiterleiten nach', ph: 'https://example.com{uri}', body: (t) => `redir ${t || 'https://example.com{uri}'}` },
+  custom: null,
+};
+function applyPreset() {
+  const p = PRESETS[$('preset').value];
+  $('targetRow').hidden = !p;
+  if (p) { $('targetLabel').textContent = p.label; $('target').placeholder = p.ph; $('body').value = p.body($('target').value.trim()); }
+}
+$('preset').onchange = applyPreset;
+$('target').oninput = () => { const p = PRESETS[$('preset').value]; if (p && editing === -1) $('body').value = p.body($('target').value.trim()); };
+
+function openEdit(i) {
+  editing = i;
+  const e = i === -1 ? { kind: 'site', header: '', body: '', comment: '' } : S.entries[i];
+  $('dlgTitle').textContent = i === -1 ? 'Neuer Eintrag' : e.kind === 'global' ? 'Globale Optionen' : e.kind === 'raw' ? 'Zeile bearbeiten' : 'Eintrag bearbeiten';
+  $('presetRow').hidden = i !== -1; $('targetRow').hidden = i !== -1 ? true : false;
+  $('addrRow').hidden = e.kind === 'global';
+  $('header').value = e.header || ''; $('body').value = e.body || ''; $('comment').value = (e.comment || '').replace(/^#\s?/gm, '');
+  $('body').closest('div').hidden = e.kind === 'raw';
+  if (i === -1) { $('preset').value = 'proxy'; $('target').value = ''; applyPreset(); }
+  $('dlg').showModal(); setTimeout(() => (e.kind === 'global' ? $('body') : $('header')).focus(), 30);
+}
+$('form').onsubmit = async (ev) => {
+  const submitter = ev.submitter; if (submitter?.id !== 'ok') return;
+  ev.preventDefault();
+  const header = $('header').value.trim().replace(/\s*,\s*/g, ', ');
+  const base = editing === -1 ? { kind: 'site' } : S.entries[editing];
+  if (base.kind !== 'global' && !header) { toast('Bitte eine Adresse angeben.', 'err'); return; }
+  const entry = { ...base, header: base.kind === 'global' ? '' : header, body: $('body').value, comment: $('comment').value.trim() };
+  const list = S.entries.slice();
+  if (editing === -1) list.push(entry); else list[editing] = entry;
+  $('dlg').close();
+  await commit(list, editing === -1 ? 'Eintrag angelegt' : 'Eintrag gespeichert');
+};
+$('cancel').onclick = () => $('dlg').close();
+$('add').onclick = () => openEdit(-1);
+
+let delIdx = null;
+$('cards').onclick = (ev) => {
+  const b = ev.target.closest('button[data-act]'); if (!b) return;
+  const i = +b.closest('.card').dataset.i;
+  if (b.dataset.act === 'edit') openEdit(i);
+  else { delIdx = i; const e = S.entries[i]; $('delText').innerHTML = `<b>${esc(e.header || 'Globale Optionen')}</b> wird aus der Caddyfile entfernt.`; $('del').showModal(); }
+};
+$('delNo').onclick = () => $('del').close();
+$('delYes').onclick = async (ev) => { ev.preventDefault(); $('del').close(); const l = S.entries.slice(); l.splice(delIdx, 1); await commit(l, 'Eintrag gelöscht'); };
+
+$('q').oninput = render;
+$('tabCards').onclick = () => { $('tabCards').className = 'on'; $('tabRaw').className = ''; $('cards').hidden = false; $('rawView').hidden = true; $('add').hidden = false; $('q').hidden = false; };
+$('tabRaw').onclick = () => { $('tabRaw').className = 'on'; $('tabCards').className = ''; $('cards').hidden = true; $('rawView').hidden = false; $('add').hidden = true; $('q').hidden = true; };
+$('saveRaw').onclick = async () => {
+  try {
+    const r = await api('PUT', '/api/raw', { text: $('raw').value, hash: S.hash });
+    setState(r.state); toast(r.reloaded ? 'Gespeichert – Caddy neu geladen ✓' : 'Gespeichert\n' + (r.note || ''), r.reloaded ? 'ok' : 'warn', 8000);
+  } catch (e) { toast(e.message, 'err', 0); }
+};
+$('raw').addEventListener('keydown', (e) => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '\t'); } });
+$('body').addEventListener('keydown', (e) => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '\t'); } });
+load();
+</script>
+</body>
+</html>

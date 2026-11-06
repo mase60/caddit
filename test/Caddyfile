@@ -1,0 +1,44 @@
+{
+	email admin@example.com
+	admin 0.0.0.0:2019
+}
+
+(secure) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	encode zstd gzip
+}
+
+# Nextcloud
+cloud.example.com {
+	import secure
+	reverse_proxy 192.168.1.20:8080
+}
+
+# Home Assistant
+ha.example.com, home.example.com {
+	import secure
+	reverse_proxy 192.168.1.30:8123 {
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+photos.example.com {
+	tls internal
+	reverse_proxy immich:2283
+}
+
+www.example.com {
+	redir https://example.com{uri} permanent
+}
+
+files.example.com {
+	root * /srv/files
+	file_server browse
+}
+
+status.example.com {
+	respond "OK" 200
+}
