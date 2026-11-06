@@ -9,7 +9,7 @@
   <Overview>Weboberfläche für die Caddyfile: Einträge übersichtlich anzeigen, hinzufügen, ändern, löschen. Validiert vor dem Speichern, legt Backups an und lädt Caddy neu.</Overview>
   <Category>Network:Web Tools:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <Icon>https://raw.githubusercontent.com/mase60/caddit/main/icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/mase60/caddit/main/icon.png</Icon>
   <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="Port der Oberfläche" Type="Port" Display="always" Required="true">8080</Config>
   <Config Name="Caddyfile" Target="/config/Caddyfile" Default="/mnt/user/appdata/caddy/Caddyfile" Mode="rw" Description="Pfad zur Caddyfile deines Caddy-Containers" Type="Path" Display="always" Required="true">/mnt/user/appdata/caddy/Caddyfile</Config>
   <Config Name="Backups" Target="/data" Default="/mnt/user/appdata/caddy-ui" Mode="rw" Description="Hier landen die automatischen Backups" Type="Path" Display="always" Required="true">/mnt/user/appdata/caddy-ui</Config>
