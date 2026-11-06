@@ -39,3 +39,17 @@ Die UI kann die Konfiguration deines Reverse Proxys ändern. Nur im LAN betreibe
 
 Beim Speichern über die Karten wird die Datei von `caddy fmt` normalisiert (Einrückung, Leerzeilen);
 Kommentare direkt über einem Block bleiben erhalten, Kommentare *innerhalb* eines Blocks im Inhaltsfeld ebenfalls.
+
+## Container-Icons (optional)
+
+Mounte `/var/run/docker.sock` (read-only) in den caddit-Container. caddit liest dann Name, IP, Ports und das
+Unraid-Icon (`net.unraid.docker.icon`) der laufenden Container und ordnet sie dem `reverse_proxy`-Ziel jedes
+Eintrags zu:
+
+* Ziel = Containername (`reverse_proxy immich:2283`, gleiches Docker-Netz)
+* Ziel = Container-IP (`172.21.0.10:2283`)
+* Ziel = `<Unraid-IP>:<veröffentlichter Port>` – dafür `HOST_IP` setzen (sonst nur, wenn der Port eindeutig ist)
+
+Container im Host-Netzwerk lassen sich nur über ihren Namen zuordnen. Ohne Socket zeigen die Einträge Buchstaben-Icons.
+Hinweis: Der Docker-Socket gibt Lesezugriff auf alle Container-Infos (auch `:ro` schützt nicht vor API-Aufrufen) –
+nur in vertrauenswürdigen Netzen verwenden.

@@ -160,12 +160,76 @@ async function save(text, baseHash) {
   try { backup(current); } catch (e) { console.error('Backup fehlgeschlagen:', e.message); }
   fs.writeFileSync(CADDYFILE, res.text); // in place, damit Bind-Mounts funktionieren
   const rl = await reload(res.text);
-  return { ok: true, validated: res.validated, ...rl, state: state() };
+  return { ok: true, validated: res.validated, ...rl, state: await state() };
 }
 
-function state() {
+// ---------- Docker-Container → Icons ----------
+const DOCKER_SOCK = process.env.DOCKER_SOCK || '/var/run/docker.sock';
+const HOST_IPS = (process.env.HOST_IP || '').split(/[,\s]+/).filter(Boolean);
+let ctCache = { t: 0, list: [] };
+
+function dockerContainers() {
+  if (Date.now() - ctCache.t < 10000) return Promise.resolve(ctCache.list);
+  if (!fs.existsSync(DOCKER_SOCK)) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    const req = http.get({ socketPath: DOCKER_SOCK, path: '/containers/json', timeout: 3000 }, (res) => {
+      let d = ''; res.on('data', (c) => (d += c));
+      res.on('end', () => {
+        try {
+          const list = JSON.parse(d).map((c) => ({
+            name: (c.Names[0] || '').replace(/^\//, ''),
+            icon: (c.Labels || {})['net.unraid.docker.icon'] || '',
+            ips: Object.values((c.NetworkSettings || {}).Networks || {}).map((n) => n.IPAddress).filter(Boolean),
+            ports: (c.Ports || []).map((p) => ({ priv: p.PrivatePort, pub: p.PublicPort })),
+          }));
+          ctCache = { t: Date.now(), list };
+          resolve(list);
+        } catch { resolve([]); }
+      });
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve([]));
+  });
+}
+
+function proxyTargets(body) {
+  const out = [];
+  for (const line of (body || '').split('\n')) {
+    const m = /^\s*reverse_proxy\s+(.*?)\s*\{?\s*$/.exec(stripComment(line));
+    if (!m) continue;
+    for (const tok of m[1].split(/\s+/)) {
+      if (!tok || /^[@\/{*]/.test(tok)) continue;
+      const mm = /^(?:(\w+):\/\/)?(\[[^\]]+\]|[^:\/]+)(?::(\d+))?/.exec(tok);
+      if (mm) out.push({ host: mm[2].toLowerCase(), port: mm[3] ? +mm[3] : mm[1] === 'https' ? 443 : 80 });
+    }
+  }
+  return out;
+}
+
+const isPrivateIp = (h) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+function matchContainer(t, list) {
+  let c = list.find((x) => x.name.toLowerCase() === t.host);                              // Containername (gleiches Docker-Netz)
+  if (!c) c = list.find((x) => x.ips.includes(t.host) && (!x.ports.length || x.ports.some((p) => p.priv === t.port))); // Container-IP
+  if (!c) {                                                                               // veröffentlichter Port auf dem Unraid-Host
+    const cand = list.filter((x) => x.ports.some((p) => p.pub === t.port));
+    if (cand.length === 1 && (HOST_IPS.includes(t.host) || (!HOST_IPS.length && isPrivateIp(t.host)))) c = cand[0];
+  }
+  return c;
+}
+function entryMeta(e, list) {
+  for (const t of e.kind === 'site' ? proxyTargets(e.body) : []) {
+    const c = matchContainer(t, list);
+    if (c) return { container: c.name, icon: c.icon };
+  }
+  return null;
+}
+
+async function state() {
   const raw = readFile();
-  return { entries: parse(raw), raw, hash: hash(raw), file: CADDYFILE, canValidate: caddyAvailable, canReload: !!CADDY_ADMIN };
+  const entries = parse(raw);
+  const list = await dockerContainers();
+  return { entries, meta: entries.map((e) => entryMeta(e, list)), raw, hash: hash(raw), file: CADDYFILE,
+    canValidate: caddyAvailable, canReload: !!CADDY_ADMIN, docker: list.length > 0 };
 }
 
 // ---------- HTTP ----------
@@ -194,7 +258,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(fs.readFileSync(path.join(__dirname, 'public', 'index.html')));
     }
-    if (url.pathname === '/api/state' && req.method === 'GET') { await hasCaddy(); return json(res, 200, state()); }
+    if (url.pathname === '/api/state' && req.method === 'GET') { await hasCaddy(); return json(res, 200, await state()); }
     if (url.pathname === '/api/entries' && req.method === 'PUT') {
       const b = await body(req);
       if (!Array.isArray(b.entries)) throw httpErr(400, 'entries fehlt');
@@ -218,4 +282,4 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   server.listen(PORT, () => console.log(`Caddy UI auf :${PORT} – Datei: ${CADDYFILE}`));
 }
-module.exports = { parse, serialize };
+module.exports = { parse, serialize, proxyTargets, matchContainer, entryMeta };

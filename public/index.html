@@ -62,6 +62,18 @@
   #toast.ok { border-color:var(--ok); } #toast.warn { border-color:var(--warn); } #toast.err { border-color:var(--bad); }
   #raw { min-height:70vh; width:100%; }
   .hint { font-size:12px; color:var(--muted); }
+  .ico { width:36px; height:36px; border-radius:9px; flex:none; object-fit:contain; background:var(--panel2); }
+  .ico.ph { display:grid; place-items:center; font-weight:700; font-size:15px; color:#fff; text-transform:uppercase; }
+  .titlebox { display:flex; gap:10px; align-items:center; flex:1; min-width:0; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; padding:7px 11px; background:none; color:var(--muted); }
+  .seg button.on { background:var(--panel2); color:var(--text); }
+  .grid.list { grid-template-columns:1fr; gap:8px; }
+  .grid.list .card { display:grid; grid-template-columns:minmax(200px,1.2fr) minmax(120px,1fr) 2fr auto; align-items:center; padding:8px 14px; gap:14px; border-radius:10px; }
+  .grid.list .card .top { min-width:0; }
+  .grid:not(.list) .note:empty { display:none; }
+  .grid.list .actions { margin:0; }
+  @media (max-width:800px) { .grid.list .card { grid-template-columns:1fr auto; } .grid.list .card .note, .grid.list .card .chips { grid-column:1 / -1; } }
 </style>
 </head>
 <body>
@@ -69,6 +81,7 @@
   <h1>Caddy UI <small id="file"></small></h1>
   <div class="tabs"><button id="tabCards" class="on">Einträge</button><button id="tabRaw">Rohtext</button></div>
   <div class="spacer"></div>
+  <div class="seg" id="viewSeg" title="Ansicht"><button id="vCards" class="on">▦ Karten</button><button id="vList">☰ Liste</button></div>
   <input class="search" id="q" type="search" placeholder="Suchen …">
   <button class="primary" id="add">+ Neuer Eintrag</button>
 </div></header>
@@ -108,7 +121,8 @@
 <div id="toast"></div>
 
 <script>
-let S = { entries: [], hash: '' };
+let S = { entries: [], meta: [], hash: '' };
+let view = localStorage.getItem('caddit-view') === 'list' ? 'list' : '';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
@@ -159,6 +173,14 @@ function siteLinks(h) {
     return link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(a)}</a>` : esc(a);
   });
 }
+const PH = ['#4f8cff','#3ecf8e','#f5a524','#b36bff','#ff6b8b','#2fc4d6','#8b93a5'];
+function icon(e, i) {
+  const m = (S.meta || [])[i];
+  const label = e.kind === 'global' ? '⚙' : e.kind === 'snippet' ? '{}' : (e.header || '?').replace(/^W*(www.)?/, '')[0] || '?';
+  const ph = `<span class="ico ph" style="background:${PH[(label.charCodeAt(0) || 0) % PH.length]}">${esc(label)}</span>`;
+  if (!m || !m.icon) return m ? `<span title="Container: ${esc(m.container)}">${ph}</span>` : ph;
+  return `<img class="ico" src="${esc(m.icon)}" referrerpolicy="no-referrer" loading="lazy" title="Container: ${esc(m.container)}" alt="" onerror="this.outerHTML=this.dataset.ph" data-ph="${esc(ph)}">`;
+}
 function card(e, i) {
   let title, more = '';
   if (e.kind === 'site') { const l = siteLinks(e.header); title = l[0] || esc(e.header); if (l.length > 1) more = `<span class="more">+ ${l.slice(1).join(', ')}</span>`; }
@@ -166,8 +188,8 @@ function card(e, i) {
   else if (e.kind === 'snippet') title = esc(e.header);
   else title = esc(e.header);
   return `<div class="card" data-i="${i}">
-    <div class="top"><div class="addr">${title}${more}</div></div>
-    ${e.comment ? `<div class="note">${esc(e.comment.replace(/^#\s?/gm, ''))}</div>` : ''}
+    <div class="top"><div class="titlebox">${icon(e, i)}<div class="addr">${title}${more}</div></div></div>
+    <div class="note">${esc((e.comment || '').replace(/^#\s?/gm, ''))}</div>
     <div class="chips">${chips(e)}</div>
     <div class="actions"><button class="sm" data-act="edit">Bearbeiten</button><button class="sm danger" data-act="del">Löschen</button></div>
   </div>`;
@@ -178,8 +200,8 @@ function render() {
   const sites = items.filter(({ e }) => e.kind === 'site');
   const other = items.filter(({ e }) => e.kind !== 'site');
   let h = `<h2>Sites (${sites.length})</h2>`;
-  h += sites.length ? `<div class="grid">${sites.map(({ e, i }) => card(e, i)).join('')}</div>` : `<div class="empty">${q ? 'Nichts gefunden.' : 'Noch keine Einträge. Lege oben den ersten an.'}</div>`;
-  if (other.length) h += `<h2>Global &amp; Snippets</h2><div class="grid">${other.map(({ e, i }) => card(e, i)).join('')}</div>`;
+  h += sites.length ? `<div class="grid ${view}">${sites.map(({ e, i }) => card(e, i)).join('')}</div>` : `<div class="empty">${q ? 'Nichts gefunden.' : 'Noch keine Einträge. Lege oben den ersten an.'}</div>`;
+  if (other.length) h += `<h2>Global &amp; Snippets</h2><div class="grid ${view}">${other.map(({ e, i }) => card(e, i)).join('')}</div>`;
   $('cards').innerHTML = h;
 }
 
@@ -246,8 +268,11 @@ $('delNo').onclick = () => $('del').close();
 $('delYes').onclick = async (ev) => { ev.preventDefault(); $('del').close(); const l = S.entries.slice(); l.splice(delIdx, 1); await commit(l, 'Eintrag gelöscht'); };
 
 $('q').oninput = render;
-$('tabCards').onclick = () => { $('tabCards').className = 'on'; $('tabRaw').className = ''; $('cards').hidden = false; $('rawView').hidden = true; $('add').hidden = false; $('q').hidden = false; };
-$('tabRaw').onclick = () => { $('tabRaw').className = 'on'; $('tabCards').className = ''; $('cards').hidden = true; $('rawView').hidden = false; $('add').hidden = true; $('q').hidden = true; };
+function setView(v) { view = v; localStorage.setItem('caddit-view', v || 'cards'); $('vCards').className = v ? '' : 'on'; $('vList').className = v ? 'on' : ''; render(); }
+$('vCards').onclick = () => setView(''); $('vList').onclick = () => setView('list');
+setView(view);
+$('tabCards').onclick = () => { $('viewSeg').hidden = false; $('tabCards').className = 'on'; $('tabRaw').className = ''; $('cards').hidden = false; $('rawView').hidden = true; $('add').hidden = false; $('q').hidden = false; };
+$('tabRaw').onclick = () => { $('viewSeg').hidden = true; $('tabRaw').className = 'on'; $('tabCards').className = ''; $('cards').hidden = true; $('rawView').hidden = false; $('add').hidden = true; $('q').hidden = true; };
 $('saveRaw').onclick = async () => {
   try {
     const r = await api('PUT', '/api/raw', { text: $('raw').value, hash: S.hash });

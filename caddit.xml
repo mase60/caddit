@@ -9,11 +9,13 @@
   <Overview>Weboberfläche für die Caddyfile: Einträge übersichtlich anzeigen, hinzufügen, ändern, löschen. Validiert vor dem Speichern, legt Backups an und lädt Caddy neu.</Overview>
   <Category>Network:Web Tools:</Category>
   <WebUI>http://[IP]:[PORT:8080]/</WebUI>
-  <Icon>https://raw.githubusercontent.com/caddyserver/website/master/src/resources/images/brand/favicon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/mase60/caddit/main/icon.svg</Icon>
   <Config Name="WebUI Port" Target="8080" Default="8080" Mode="tcp" Description="Port der Oberfläche" Type="Port" Display="always" Required="true">8080</Config>
   <Config Name="Caddyfile" Target="/config/Caddyfile" Default="/mnt/user/appdata/caddy/Caddyfile" Mode="rw" Description="Pfad zur Caddyfile deines Caddy-Containers" Type="Path" Display="always" Required="true">/mnt/user/appdata/caddy/Caddyfile</Config>
   <Config Name="Backups" Target="/data" Default="/mnt/user/appdata/caddy-ui" Mode="rw" Description="Hier landen die automatischen Backups" Type="Path" Display="always" Required="true">/mnt/user/appdata/caddy-ui</Config>
   <Config Name="CADDY_ADMIN" Target="CADDY_ADMIN" Default="" Mode="" Description="Admin-API von Caddy für Auto-Reload, z.B. http://192.168.1.10:2019 (leer = nicht neu laden)" Type="Variable" Display="always" Required="false"></Config>
+  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="ro" Description="Optional: Für Container-Icons an den Einträgen (liest Name, IP, Ports, Icon der Container)" Type="Path" Display="advanced" Required="false">/var/run/docker.sock</Config>
+  <Config Name="HOST_IP" Target="HOST_IP" Default="" Mode="" Description="Optional: IP deines Unraid-Servers (z.B. 192.168.178.21), damit Ziele wie IP:Port dem Container zugeordnet werden" Type="Variable" Display="advanced" Required="false"></Config>
   <Config Name="UI_USER" Target="UI_USER" Default="" Mode="" Description="Optional: Benutzername für Basic-Auth" Type="Variable" Display="advanced" Required="false"></Config>
   <Config Name="UI_PASS" Target="UI_PASS" Default="" Mode="" Description="Optional: Passwort für Basic-Auth" Type="Variable" Display="advanced" Required="false"></Config>
 </Container>

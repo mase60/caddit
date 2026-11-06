@@ -9,5 +9,4 @@ COPY public ./public
 ENV PORT=8080 CADDYFILE=/config/Caddyfile BACKUP_DIR=/data/backups NODE_ENV=production
 VOLUME ["/data"]
 EXPOSE 8080
-USER node
 CMD ["node", "server.js"]
