@@ -121,10 +121,19 @@ async function formatAndValidate(text) {
 async function reload(text) {
   if (!CADDY_ADMIN) return { reloaded: false, note: 'CADDY_ADMIN nicht gesetzt – Datei gespeichert, Caddy nicht neu geladen.' };
   try {
-    const headers = { 'Content-Type': 'text/caddyfile' };
-    if (CADDY_ADMIN_HOST) headers.Host = CADDY_ADMIN_HOST;
-    const r = await fetch(CADDY_ADMIN + '/load', { method: 'POST', headers, body: text, signal: AbortSignal.timeout(15000) });
-    if (!r.ok) return { reloaded: false, note: `Caddy hat das Reload abgelehnt (${r.status}): ${(await r.text()).trim()}` };
+    const u = new URL(CADDY_ADMIN + '/load');
+    const host = CADDY_ADMIN_HOST || u.host;
+    // Caddy prüft Host + Origin gegen "origins" – beide explizit setzen (fetch schickt einen leeren Origin)
+    const r = await new Promise((resolve, reject) => {
+      const req = http.request({ hostname: u.hostname, port: u.port || 80, path: u.pathname, method: 'POST', timeout: 15000,
+        headers: { 'Content-Type': 'text/caddyfile', 'Content-Length': Buffer.byteLength(text), Host: host, Origin: 'http://' + host } }, (res) => {
+        let d = ''; res.on('data', (c) => (d += c)); res.on('end', () => resolve({ status: res.statusCode, body: d }));
+      });
+      req.on('timeout', () => req.destroy(new Error('Timeout')));
+      req.on('error', reject);
+      req.end(text);
+    });
+    if (r.status >= 300) return { reloaded: false, note: `Caddy hat das Reload abgelehnt (${r.status}): ${r.body.trim()}` };
     return { reloaded: true };
   } catch (e) {
     return { reloaded: false, note: 'Admin-API nicht erreichbar: ' + e.message };

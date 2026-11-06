@@ -1,4 +1,4 @@
-# Caddy UI
+# caddit
 
 Kleine Weboberfläche für die Caddyfile (Unraid-tauglich, ~0 Abhängigkeiten).
 
@@ -9,14 +9,14 @@ Kleine Weboberfläche für die Caddyfile (Unraid-tauglich, ~0 Abhängigkeiten).
 
 ## Build & Start
 
-    docker build -t caddy-ui .
-    docker run -d --name caddy-ui -p 8080:8080 \
+    docker build -t caddit .
+    docker run -d --name caddit -p 8080:8080 \
       -v /mnt/user/appdata/caddy/Caddyfile:/config/Caddyfile \
       -v /mnt/user/appdata/caddy-ui:/data \
       -e CADDY_ADMIN=http://192.168.1.10:2019 \
-      caddy-ui
+      caddit
 
-Unraid: `caddy-ui.xml` nach `/boot/config/plugins/dockerMan/templates-user/` kopieren, Image-Namen anpassen.
+Unraid: `caddit.xml` nach `/boot/config/plugins/dockerMan/templates-user/` kopieren, Image-Namen anpassen.
 
 ## Auto-Reload
 
