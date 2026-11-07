@@ -269,6 +269,15 @@ const server = http.createServer(async (req, res) => {
       if (typeof b.text !== 'string') throw httpErr(400, 'text fehlt');
       return json(res, 200, await save(b.text.endsWith('\n') ? b.text : b.text + '\n', b.hash));
     }
+    if (url.pathname === '/api/hash' && req.method === 'POST') {
+      const b = await body(req);
+      if (typeof b.password !== 'string' || !b.password || b.password.length > 256) throw httpErr(400, 'Passwort fehlt oder ist zu lang');
+      if (!(await hasCaddy())) throw httpErr(501, 'caddy-Binary nicht verfügbar – Passwort-Hash kann nicht erzeugt werden.');
+      const r = await run(CADDY_BIN, ['hash-password', '--plaintext=' + b.password]);
+      const h = r.out.trim();
+      if (r.err || !/^\$2[aby]\$/.test(h)) throw httpErr(500, 'Hash konnte nicht erzeugt werden');
+      return json(res, 200, { hash: h });
+    }
     if (url.pathname === '/api/backups' && req.method === 'GET') {
       const files = fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR).filter((f) => f.startsWith('Caddyfile.')).sort().reverse() : [];
       return json(res, 200, { files });
