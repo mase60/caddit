@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Caddy UI</title>
+<title>caddit</title>
 <style>
   :root {
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a5;
@@ -93,11 +93,23 @@
   .grid:not(.list) .note:empty { display:none; }
   .grid.list .actions { margin:0; }
   @media (max-width:800px) { .grid.list .card { grid-template-columns:1fr auto; } .grid.list .card .note, .grid.list .card .chips { grid-column:1 / -1; } }
+  textarea.short { min-height:0; font:inherit; resize:vertical; }
+  h1 small.openhint { display:inline; color:var(--warn); }
+  .foot { flex-wrap:wrap; align-items:center; }
+  .foot button { white-space:nowrap; }
+  .banner { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding:10px 14px; border-radius:10px; border:1px solid var(--warn); background:color-mix(in srgb,var(--warn) 10%,var(--panel)); margin-bottom:14px; font-size:13px; }
+  .banner span { flex:1 1 260px; }
+  .formerr { white-space:pre-wrap; font-size:13px; padding:10px 12px; border-radius:8px; border:1px solid var(--bad); background:color-mix(in srgb,var(--bad) 10%,var(--panel)); max-height:30vh; overflow:auto; }
+  .baklist { list-style:none; margin:0; padding:0; max-height:50vh; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+  .baklist li { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:6px 10px; border:1px solid var(--line); border-radius:8px; }
+  .hint.dirty { color:var(--warn); }
+  button:disabled { opacity:.5; cursor:default; }
+  #toast { cursor:pointer; }
 </style>
 </head>
 <body>
 <header><div class="bar">
-  <h1>Caddy UI <small id="file"></small></h1>
+  <h1>caddit <small id="file"></small><small id="openHint" class="openhint" hidden title="UI_USER und UI_PASS sind nicht gesetzt. Jeder im Netz kann diese Oberfläche und damit deinen Reverse Proxy ändern.">ohne Anmeldung</small></h1>
   <div class="tabs"><button id="tabCards" class="on">Einträge</button><button id="tabRaw">Rohtext</button></div>
   <div class="spacer"></div>
   <div class="seg" id="viewSeg" title="Ansicht"><button id="vCards" class="on">▦ Karten</button><button id="vList">☰ Liste</button></div>
@@ -107,10 +119,11 @@
 </div></header>
 
 <main>
+  <div id="conflict" class="banner warn" hidden><span id="conflictText"></span><button class="sm" id="conflictLoad">Neuen Stand laden</button></div>
   <div id="cards"></div>
   <div id="rawView" hidden>
     <textarea id="raw" spellcheck="false"></textarea>
-    <div class="foot"><span class="hint" style="margin-right:auto">Ganze Datei bearbeiten – wird vor dem Speichern validiert.</span><button class="primary" id="saveRaw">Speichern &amp; Neu laden</button></div>
+    <div class="foot"><span class="hint" id="rawHint" style="margin-right:auto"></span><button id="openBackups">Backups …</button><button id="discardRaw" hidden>Verwerfen</button><button class="primary" id="saveRaw">Speichern</button></div>
   </div>
 </main>
 
@@ -133,7 +146,8 @@
     <div class="hint" id="authHint" hidden></div>
   </div>
   <div><label for="body">Inhalt (Direktiven)</label><textarea id="body" spellcheck="false"></textarea></div>
-  <div><label for="comment">Kommentar (optional)</label><input id="comment" placeholder="z. B. Nextcloud"></div>
+  <div><label for="comment">Kommentar (optional)</label><textarea id="comment" class="short" rows="2" placeholder="z. B. Nextcloud"></textarea></div>
+  <div class="formerr" id="formErr" role="alert" hidden></div>
   <div class="foot"><button value="cancel" type="button" id="cancel">Abbrechen</button><button class="primary" id="ok" type="submit">Speichern</button></div>
 </form></dialog>
 
@@ -143,230 +157,16 @@
   <div class="foot"><button type="button" id="delNo">Abbrechen</button><button class="primary danger" id="delYes" style="background:var(--bad);border-color:var(--bad)">Löschen</button></div>
 </form></dialog>
 
+<dialog id="bak"><div class="dlg">
+  <h3>Backups</h3>
+  <div class="hint">Ein Backup wird als Entwurf in den Rohtext geladen. Erst dein Speichern stellt es wieder her, geprüft und mit neuem Backup des aktuellen Stands.</div>
+  <ul class="baklist" id="bakList"></ul>
+  <div class="foot"><button type="button" id="bakClose">Schließen</button></div>
+</div></dialog>
+
 <div id="toast"></div>
 
-<script>
-let S = { entries: [], meta: [], hash: '' };
-let sortMode = ['az', 'za', 'file'].includes(localStorage.getItem('caddit-sort')) ? localStorage.getItem('caddit-sort') : 'az';
-const sortKey = (e) => (e.header || '').split(/[\s,]+/)[0].replace(/^https?:\/\//, '').replace(/^\*\./, '').replace(/^www\./, '').toLowerCase();
-function sortItems(list) {
-  if (sortMode === 'file') return list;
-  const dir = sortMode === 'za' ? -1 : 1;
-  return list.slice().sort((a, b) => dir * sortKey(a.e).localeCompare(sortKey(b.e), 'de', { numeric: true, sensitivity: 'base' }));
-}
-let view = localStorage.getItem('caddit-view') === 'list' ? 'list' : '';
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-
-function toast(msg, type = 'ok', ms = 4500) {
-  const t = $('toast'); t.textContent = msg; t.className = type; t.style.display = 'block';
-  clearTimeout(toast.t); if (ms) toast.t = setTimeout(() => (t.style.display = 'none'), ms);
-}
-async function api(method, url, data) {
-  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: data ? JSON.stringify(data) : undefined });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || r.statusText);
-  return j;
-}
-function setState(st) { S = st; $('file').textContent = st.file; $('raw').value = st.raw; render(); }
-async function load() { try { setState(await api('GET', '/api/state')); } catch (e) { toast(e.message, 'err', 0); } }
-
-// Top-level-Direktiven aus dem Body lesen
-function directives(body) {
-  const out = []; let depth = 0;
-  for (const line of (body || '').split('\n')) {
-    const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    if (depth === 0) out.push(t.replace(/\s*\{$/, ''));
-    if (/(^|\s)\{$/.test(t)) depth++; else if (t === '}') depth = Math.max(0, depth - 1);
-  }
-  return out;
-}
-function chips(e) {
-  const out = [];
-  for (const d of directives(e.body)) {
-    const [name, ...args] = d.split(/\s+/);
-    if (name === 'reverse_proxy') out.push(`<span class="chip proxy">→ ${esc(args.filter(a=>!a.startsWith('@')&&a!=='/*').join(' ') || '(Block)')}</span>`);
-    else if (name === 'file_server') out.push(`<span class="chip proxy">Dateien</span>`);
-    else if (name === 'root') out.push(`<span class="chip">root ${esc(args.slice(-1)[0])}</span>`);
-    else if (name === 'redir') out.push(`<span class="chip warn">redir ${esc(args.join(' '))}</span>`);
-    else if (name === 'respond') out.push(`<span class="chip">respond ${esc(args.join(' '))}</span>`);
-    else if (name === 'basic_auth' || name === 'basicauth') out.push(`<span class="chip ok">🔒 Login</span>`);
-    else if (name === 'tls') out.push(`<span class="chip ok">tls ${esc(args.join(' '))}</span>`);
-    else if (name === 'import') out.push(`<span class="chip">import ${esc(args.join(' '))}</span>`);
-    else if (name.startsWith('@')) continue;
-    else out.push(`<span class="chip">${esc(name)}</span>`);
-  }
-  return out.length ? out.join('') : '<span class="chip">leer</span>';
-}
-function siteLinks(h) {
-  return h.split(/[\s,]+/).filter(Boolean).map((a) => {
-    const clean = a.replace(/^https?:\/\//, '');
-    const link = /^[\w.*-]+(:\d+)?(\/.*)?$/.test(clean) && !clean.startsWith('*') ? (a.startsWith('http://') ? a : (/:80$/.test(clean) ? 'http://' : 'https://') + clean) : null;
-    return link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(a)}</a>` : esc(a);
-  });
-}
-const PH = ['#4f8cff','#3ecf8e','#f5a524','#b36bff','#ff6b8b','#2fc4d6','#8b93a5'];
-function icon(e, i) {
-  const m = (S.meta || [])[i];
-  const label = e.kind === 'global' ? '⚙' : e.kind === 'snippet' ? '{}' : (e.header || '?').replace(/^W*(www.)?/, '')[0] || '?';
-  const ph = `<span class="ico ph" style="background:${PH[(label.charCodeAt(0) || 0) % PH.length]}">${esc(label)}</span>`;
-  if (!m || !m.icon) return m ? `<span title="Container: ${esc(m.container)}">${ph}</span>` : ph;
-  return `<img class="ico" src="${esc(m.icon)}" referrerpolicy="no-referrer" loading="lazy" title="Container: ${esc(m.container)}" alt="" onerror="this.outerHTML=this.dataset.ph" data-ph="${esc(ph)}">`;
-}
-function card(e, i) {
-  let title, more = '';
-  if (e.kind === 'site') { const l = siteLinks(e.header); title = l[0] || esc(e.header); if (l.length > 1) more = `<span class="more">+ ${l.slice(1).join(', ')}</span>`; }
-  else if (e.kind === 'global') title = 'Globale Optionen';
-  else if (e.kind === 'snippet') title = esc(e.header);
-  else title = esc(e.header);
-  return `<div class="card" data-i="${i}">
-    <div class="top"><div class="titlebox">${icon(e, i)}<div class="addr">${title}${more}</div></div></div>
-    <div class="note">${esc((e.comment || '').replace(/^#\s?/gm, ''))}</div>
-    <div class="chips">${chips(e)}</div>
-    <div class="actions"><button class="sm" data-act="edit">Bearbeiten</button><button class="sm danger" data-act="del">Löschen</button></div>
-  </div>`;
-}
-function render() {
-  const q = $('q').value.trim().toLowerCase();
-  const items = S.entries.map((e, i) => ({ e, i })).filter(({ e }) => e.kind !== 'comment' && (!q || JSON.stringify(e).toLowerCase().includes(q)));
-  const sites = sortItems(items.filter(({ e }) => e.kind === 'site'));
-  const other = sortItems(items.filter(({ e }) => e.kind !== 'site'));
-  let h = `<h2>Sites (${sites.length})</h2>`;
-  h += sites.length ? `<div class="grid ${view}">${sites.map(({ e, i }) => card(e, i)).join('')}</div>` : `<div class="empty">${q ? 'Nichts gefunden.' : 'Noch keine Einträge. Lege oben den ersten an.'}</div>`;
-  if (other.length) h += `<h2>Global &amp; Snippets</h2><div class="grid ${view}">${other.map(({ e, i }) => card(e, i)).join('')}</div>`;
-  $('cards').innerHTML = h;
-}
-
-async function commit(entries, okMsg) {
-  try {
-    const r = await api('PUT', '/api/entries', { entries, hash: S.hash });
-    setState(r.state);
-    if (r.reloaded) toast(okMsg + ' – Caddy neu geladen ✓', 'ok');
-    else toast(okMsg + '\n' + (r.note || ''), 'warn', 9000);
-    return true;
-  } catch (e) { toast(e.message, 'err', 0); return false; }
-}
-
-// ----- Dialog -----
-let editing = null; // Index oder -1 für neu
-const PRESETS = {
-  proxy: { label: 'Ziel (IP:Port oder URL)', ph: '192.168.1.20:8080', body: (t) => `reverse_proxy ${t || 'IP:PORT'}` },
-  static: { label: 'Ordner (root)', ph: '/srv/www', body: (t) => `root * ${t || '/srv/www'}\nfile_server` },
-  redir: { label: 'Weiterleiten nach', ph: 'https://example.com{uri}', body: (t) => `redir ${t || 'https://example.com{uri}'}` },
-  custom: null,
-};
-function applyPreset() {
-  const p = PRESETS[$('preset').value];
-  $('targetRow').hidden = !p;
-  if (p) { $('targetLabel').textContent = p.label; $('target').placeholder = p.ph; $('body').value = p.body($('target').value.trim()); }
-}
-$('preset').onchange = applyPreset;
-$('target').oninput = () => { const p = PRESETS[$('preset').value]; if (p && editing === -1) $('body').value = p.body($('target').value.trim()); };
-
-// basic_auth { user hash } aus dem Body herauslösen (nur die einfache Form ohne Matcher/Algorithmus)
-function splitAuth(body) {
-  const lines = (body || '').split('\n');
-  const rest = []; let auth = null, depth = 0, i = 0, complex = false;
-  while (i < lines.length) {
-    const t = lines[i].trim();
-    const m = depth === 0 && /^(basic_auth|basicauth)(\s.*)?$/.exec(t);
-    if (m) {
-      if ((m[2] || '').trim() === '{' && !auth) {
-        const users = []; let j = i + 1, ok = false;
-        for (; j < lines.length; j++) {
-          const u = lines[j].trim();
-          if (u === '}') { ok = true; break; }
-          if (u && !u.startsWith('#')) users.push(u.split(/\s+/));
-        }
-        if (ok && users.length === 1 && users[0].length === 2) { auth = { user: users[0][0], hash: users[0][1] }; i = j + 1; continue; }
-      }
-      complex = true;
-    }
-    if (/(^|\s)\{$/.test(t)) depth++; else if (t === '}') depth = Math.max(0, depth - 1);
-    rest.push(lines[i]); i++;
-  }
-  return { rest: rest.join('\n').replace(/^\s*\n+|\n+\s*$/g, ''), auth, complex };
-}
-let authHash = '';
-function syncAuth() { $('authFields').hidden = !$('authOn').checked; }
-$('authOn').onchange = () => { syncAuth(); if ($('authOn').checked) $('authUser').focus(); };
-
-function openEdit(i) {
-  editing = i;
-  const e = i === -1 ? { kind: 'site', header: '', body: '', comment: '' } : S.entries[i];
-  $('dlgTitle').textContent = i === -1 ? 'Neuer Eintrag' : e.kind === 'global' ? 'Globale Optionen' : e.kind === 'raw' ? 'Zeile bearbeiten' : 'Eintrag bearbeiten';
-  $('presetRow').hidden = i !== -1; $('targetRow').hidden = i !== -1 ? true : false;
-  $('addrRow').hidden = e.kind === 'global';
-  $('header').value = e.header || ''; $('body').value = e.body || ''; $('comment').value = (e.comment || '').replace(/^#\s?/gm, '');
-  $('body').closest('div').hidden = e.kind === 'raw';
-  // Basic-Auth-Schalter
-  const sa = splitAuth(e.body || '');
-  $('authRow').hidden = !(e.kind === 'site' || e.kind === 'snippet');
-  authHash = sa.auth ? sa.auth.hash : '';
-  if (sa.auth) $('body').value = sa.rest;
-  $('authOn').checked = !!sa.auth; $('authOn').disabled = sa.complex;
-  $('authUser').value = sa.auth ? sa.auth.user : ''; $('authPass').value = '';
-  $('authPass').placeholder = sa.auth ? 'leer lassen = Passwort behalten' : 'Passwort';
-  $('authHint').hidden = !sa.complex;
-  $('authHint').textContent = sa.complex ? 'Der Inhalt enthält bereits ein komplexeres basic_auth (mehrere Benutzer, Matcher o. Ä.) – bitte direkt im Inhalt bearbeiten.' : '';
-  syncAuth();
-  if (i === -1) { $('preset').value = 'proxy'; $('target').value = ''; applyPreset(); }
-  $('dlg').showModal(); setTimeout(() => (e.kind === 'global' ? $('body') : $('header')).focus(), 30);
-}
-$('form').onsubmit = async (ev) => {
-  const submitter = ev.submitter; if (submitter?.id !== 'ok') return;
-  ev.preventDefault();
-  const header = $('header').value.trim().replace(/\s*,\s*/g, ', ');
-  const base = editing === -1 ? { kind: 'site' } : S.entries[editing];
-  if (base.kind !== 'global' && !header) { toast('Bitte eine Adresse angeben.', 'err'); return; }
-  let bodyText = $('body').value;
-  if (!$('authRow').hidden && !$('authOn').disabled && $('authOn').checked) {
-    const user = $('authUser').value.trim(), pass = $('authPass').value;
-    if (!user || /\s/.test(user)) { toast('Bitte einen Benutzernamen ohne Leerzeichen angeben.', 'err'); return; }
-    let hashed = authHash;
-    if (pass) {
-      try { hashed = (await api('POST', '/api/hash', { password: pass })).hash; } catch (err) { toast(err.message, 'err'); return; }
-    }
-    if (!hashed) { toast('Bitte ein Passwort angeben.', 'err'); return; }
-    bodyText = 'basic_auth {\n\t' + user + ' ' + hashed + '\n}' + (bodyText.trim() ? '\n' + bodyText : '');
-  }
-  const entry = { ...base, header: base.kind === 'global' ? '' : header, body: bodyText, comment: $('comment').value.trim() };
-  const list = S.entries.slice();
-  if (editing === -1) list.push(entry); else list[editing] = entry;
-  $('dlg').close();
-  await commit(list, editing === -1 ? 'Eintrag angelegt' : 'Eintrag gespeichert');
-};
-$('cancel').onclick = () => $('dlg').close();
-$('add').onclick = () => openEdit(-1);
-
-let delIdx = null;
-$('cards').onclick = (ev) => {
-  const b = ev.target.closest('button[data-act]'); if (!b) return;
-  const i = +b.closest('.card').dataset.i;
-  if (b.dataset.act === 'edit') openEdit(i);
-  else { delIdx = i; const e = S.entries[i]; $('delText').innerHTML = `<b>${esc(e.header || 'Globale Optionen')}</b> wird aus der Caddyfile entfernt.`; $('del').showModal(); }
-};
-$('delNo').onclick = () => $('del').close();
-$('delYes').onclick = async (ev) => { ev.preventDefault(); $('del').close(); const l = S.entries.slice(); l.splice(delIdx, 1); await commit(l, 'Eintrag gelöscht'); };
-
-$('q').oninput = render;
-$('sort').value = sortMode;
-$('sort').onchange = () => { sortMode = $('sort').value; localStorage.setItem('caddit-sort', sortMode); render(); };
-function setView(v) { view = v; localStorage.setItem('caddit-view', v || 'cards'); $('vCards').className = v ? '' : 'on'; $('vList').className = v ? 'on' : ''; render(); }
-$('vCards').onclick = () => setView(''); $('vList').onclick = () => setView('list');
-setView(view);
-$('tabCards').onclick = () => { $('viewSeg').hidden = false; $('tabCards').className = 'on'; $('tabRaw').className = ''; $('cards').hidden = false; $('rawView').hidden = true; $('add').hidden = false; $('q').hidden = false; $('sortWrap').hidden = false; };
-$('tabRaw').onclick = () => { $('viewSeg').hidden = true; $('tabRaw').className = 'on'; $('tabCards').className = ''; $('cards').hidden = true; $('rawView').hidden = false; $('add').hidden = true; $('q').hidden = true; $('sortWrap').hidden = true; };
-$('saveRaw').onclick = async () => {
-  try {
-    const r = await api('PUT', '/api/raw', { text: $('raw').value, hash: S.hash });
-    setState(r.state); toast(r.reloaded ? 'Gespeichert – Caddy neu geladen ✓' : 'Gespeichert\n' + (r.note || ''), r.reloaded ? 'ok' : 'warn', 8000);
-  } catch (e) { toast(e.message, 'err', 0); }
-};
-$('raw').addEventListener('keydown', (e) => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '\t'); } });
-$('body').addEventListener('keydown', (e) => { if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '\t'); } });
-load();
-</script>
+<script src="logic.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
