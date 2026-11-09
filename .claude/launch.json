@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "caddit-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/dev.js"],
+      "port": 3998
+    }
+  ]
+}

@@ -17,5 +17,6 @@
   <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="ro" Description="Optional: Für Container-Icons an den Einträgen (liest Name, IP, Ports, Icon der Container)" Type="Path" Display="advanced" Required="false">/var/run/docker.sock</Config>
   <Config Name="HOST_IP" Target="HOST_IP" Default="" Mode="" Description="Optional: IP deines Unraid-Servers (z.B. 192.168.178.21), damit Ziele wie IP:Port dem Container zugeordnet werden" Type="Variable" Display="advanced" Required="false"></Config>
   <Config Name="UI_USER" Target="UI_USER" Default="" Mode="" Description="Optional: Benutzername für Basic-Auth" Type="Variable" Display="advanced" Required="false"></Config>
-  <Config Name="UI_PASS" Target="UI_PASS" Default="" Mode="" Description="Optional: Passwort für Basic-Auth" Type="Variable" Display="advanced" Required="false"></Config>
+  <Config Name="UI_PASS" Target="UI_PASS" Default="" Mode="" Description="Optional: Passwort für Basic-Auth (wirkt nur zusammen mit UI_USER)" Type="Variable" Display="advanced" Required="false"></Config>
+  <Config Name="ALLOWED_HOSTS" Target="ALLOWED_HOSTS" Default="" Mode="" Description="Optional: Erlaubte Hostnamen der Oberfläche, mit Komma getrennt, z.B. caddit.lan,192.168.1.10:8080 (Schutz vor DNS-Rebinding; leer = alle)" Type="Variable" Display="advanced" Required="false"></Config>
 </Container>
